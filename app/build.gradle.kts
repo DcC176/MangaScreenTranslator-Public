@@ -1,6 +1,8 @@
 // 注意：在 .gradle.kts 里不能写 `java.util.Properties`，
 // 因为脚本作用域中的 `java` 会被解析成 JavaPluginExtension 而不是包名，必须显式 import。
 import java.util.Properties
+import com.android.build.api.variant.FilterConfiguration
+import com.android.build.api.variant.impl.VariantOutputImpl
 
 plugins {
     id("com.android.application")
@@ -25,8 +27,8 @@ android {
         applicationId = "com.mangatranslate"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
-        versionName = "1.4.0"
+        versionCode = 44
+        versionName = "1.5.0"
     }
 
     signingConfigs {
@@ -60,6 +62,33 @@ android {
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+    }
+
+    // 两个分发形态。分开的唯一硬理由是合规：ML Kit 的离线翻译模型属于 Google 专有条款下的
+    // "related software"，未授予再分发权利，因此**对外发布的包里不能内置**。
+    //
+    //   foss —— 发布版。不含模型，首次使用时走 ML Kit 官方下载通道。
+    //           同时关闭 Pro 门禁：发布形态是「完整免费 + 捐赠」，不锁任何功能。
+    //   full —— 自用版。内置模型、离线即用、保留 Pro 授权链，但不对外分发。
+    //
+    // 本仓库（Public）只含文档与构建配置，不含源码与模型资产，
+    // 因此按设计不可构建 —— 这里的变体定义是为了与主仓库保持一致。
+    flavorDimensions += "distribution"
+
+    productFlavors {
+        create("foss") {
+            dimension = "distribution"
+            buildConfigField("boolean", "BUNDLED_MODELS", "false")
+            buildConfigField("boolean", "PRO_ENABLED", "false")
+        }
+        create("full") {
+            dimension = "distribution"
+            buildConfigField("boolean", "BUNDLED_MODELS", "true")
+            buildConfigField("boolean", "PRO_ENABLED", "true")
+            // 两个变体若共用 applicationId，安装时会互相静默替换 —— 装错版本看不出来。
+            applicationIdSuffix = ".full"
+            versionNameSuffix = "-selfuse"
         }
     }
 
@@ -99,10 +128,30 @@ android {
     }
 
     androidResources {
-        // 内置的离线翻译模型是 zip（en_ja / en_zh，合计 83MB）。它们本身已经是压缩格式，
-        // 让 aapt 再压一遍既省不下体积，又会让 AssetManager.openFd() 失效
-        // （被压缩过的 asset 拿不到文件描述符）。直接原样存进 APK。
+        // 内置的离线翻译模型是 zip（en_ja / en_zh，合计 83MB，位于 full 变体的
+        // src/full/assets/models/）。它们本身已经是压缩格式，让 aapt 再压一遍既省不下
+        // 体积，又会让 AssetManager.openFd() 失效（被压缩过的 asset 拿不到文件描述符）。
+        // 直接原样存进 APK。
         noCompress += listOf("zip")
+    }
+}
+
+// 产物文件名：保持历史命名。对外发布的 foss 包沿用 app-<abi>-<type>.apk，
+// 自用版加 `full-` 标记以便区分。
+//
+// `outputFileName` 只存在于内部实现类 VariantOutputImpl，公开接口 VariantOutput
+// （AGP 8.5.2）没有暴露它。这里用硬转换：AGP 升级若改了类型，应当在配置阶段就报错，
+// 而不是静默地不重命名。
+androidComponents {
+    onVariants { variant ->
+        val prefix = if (variant.flavorName == "full") "full-" else ""
+        variant.outputs.forEach { output ->
+            val o = output as VariantOutputImpl
+            val abi = o.filters
+                .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
+                ?.identifier ?: "universal"
+            o.outputFileName.set("app-$prefix$abi-${variant.buildType}.apk")
+        }
     }
 }
 
