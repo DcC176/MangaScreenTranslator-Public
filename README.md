@@ -121,12 +121,13 @@ flowchart TD
 
 ## 下载安装
 
-从 [**Releases**](../../releases) 下载 APK，拷进手机安装（需允许「安装未知来源应用」）：
+从 [**Releases**](../../releases) 下载 APK，拷进手机安装（需允许「安装未知来源应用」）。
+请使用**最新的 `v1.5.0`**——更早的 `v1.4.0` 是对外分发规则确立前构建的包，体积更大且不符合当前分发口径。
 
 | 文件 | 大小 | 适用 |
 |---|---|---|
 | `MangaScreenTranslator-v1.5.0-foss-arm64-v8a.apk` | 31 MB | **推荐**。近五年所有真机（骁龙/天玑/麒麟均为 arm64） |
-| `MangaScreenTranslator-v1.5.0-foss-universal.apk` | 107 MB | 模拟器 / 老 32 位机 / 不确定架构 |
+| `MangaScreenTranslator-v1.5.0-foss-universal.apk` | 104 MB | 模拟器 / 老 32 位机 / 不确定架构 |
 
 这两个包是**对外分发的 `foss` 变体**：不含内置翻译模型，因此体积比自用版小约 80MB。
 首次使用 ML Kit 引擎时会经官方通道下载模型（约 90MB），下载一次之后即完全离线可用；
