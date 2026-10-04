@@ -3,11 +3,11 @@
 Android 端「屏幕翻译」应用，专门针对**日文漫画**优化：实时识别屏幕上漫画气泡里的日文，
 就地把译文绘制回气泡原位。工作在任何漫画阅读器之上，不需要漫画源文件。
 
-**日文 → 简体中文 · 默认完全离线 · 免费 · 无需 API Key**
+**日文 → 简体中文 · 端上离线 · 全部功能免费 · 无需 API Key**
 
 | | |
 |---|---|
-| 状态 | v1.4.0（versionCode 43），release 正式签名 |
+| 状态 | v1.5.0（versionCode 44），release 正式签名，双构建变体（`foss` / `full`） |
 | 规模 | 39 个 Kotlin 文件 / 约 9,300 行代码，单人独立开发 |
 | 引擎 | ML Kit 端上离线（默认）/ OpenAI 兼容大模型 / DeepL / Google Cloud Translation |
 | 最低支持 | Android 8.0（API 26），targetSdk 35 |
@@ -30,9 +30,9 @@ Android 端「屏幕翻译」应用，专门针对**日文漫画**优化：实�
 - **就地覆盖排版** —— 译文按气泡尺寸自适应字号；竖排气泡输出竖排中文；按气泡底色自动选黑字或白字
 - **四级 OCR 回退** —— 轴对齐框 → 角点外接框 → 元素框并集，专治 ML Kit 对竖排日文返回空矩形的问题
 - **4 种翻译引擎热切换** —— 离线 / 大模型 / DeepL / Google，切换即生效
-- **离线开箱即用** —— ML Kit 日文 OCR 与翻译模型全部预置进 APK（为此自己打通了模型内置方案），装上就能用，地铁上也能用
+- **端上离线能力** —— 端上 OCR + 端上翻译，翻译引擎本身不联网即可工作；对外分发的 `foss` 包首次使用 ML Kit 引擎时走官方通道取模型（约 90MB），之后完全离线
 - **帧级去重 + 双层缓存** —— 8×8 感知哈希判帧 + 内存 LRU + 磁盘 JSON，同一页停留再久也不会重复计算
-- **Pro 能力已落地** —— 术语库、作品档案、离线授权码（非对称签名，无服务端），具备完整商业化能力
+- **全部功能免费** —— 术语库、作品档案等高级功能不做付费墙，商业化路径为「完整免费 + 自愿捐赠」；代码中保留可选的 Pro 门禁开关，与免费形态共用同一套管线
 
 ---
 
@@ -72,7 +72,8 @@ flowchart TD
 - **截屏、OCR、翻译、悬浮窗全在一个 Service** —— MediaProjection 的授权 token 绑定在创建它的组件上，拆成多服务后分辨率、旋转、投影生命周期都要跨组件同步，还要处理任意一方被系统杀掉的情况。一个服务持有全部状态，推理成本最低；拆分边界已预留。
 - **SharedPreferences 而非 DataStore** —— 截屏循环每 1.5 秒要**同步**读一次配置（后台线程）。SharedPreferences 有内存缓存，读是 O(1) 不阻塞；DataStore 只能异步读，会把热路径变成 suspend 调用。对外暴露 `StateFlow`，将来切换只改一个文件。
 - **管线 `tryLock` 而非 `lock`** —— 自动模式下上一轮没跑完就直接跳过本轮。排队只会让延迟越积越大，屏幕上出现的还是好几秒前的结果。
-- **离线模型打进 APK** —— ML Kit 官方只给 OCR 提供内置版本，翻译模型必须首启联网下载。把模型预置进 assets、运行时装到 ML Kit 认的目录，彻底消除首次下载失败这个最大的可用性风险，代价是 APK 增大约 80MB（en_ja 45.8MB + en_zh 33.7MB）。
+- **按「能不能分发」拆构建变体** —— 早期版本把 ML Kit 离线翻译模型打进 APK，但该模型属 Google 专有条款下的 "related software"，未授予再分发权利。于是按 `distribution` 维度拆成两个变体：`foss`（对外分发，不内置模型，首启走官方下载通道）与 `full`（自用，内置模型，离线即用）。**合规约束直接落进构建配置，而不是靠发布时人工记得**：两个变体用不同 `applicationId`（`.full` 后缀）避免装错，并配了 `tools/preflight.sh` 在发布前断言「不含模型 / 体积正常 / 捐赠链接已配置」
+- **两个变体共用一套源码** —— 差异只用 `buildConfigField` 表达（`BUNDLED_MODELS` / `PRO_ENABLED`），管线代码一行未分叉，避免长期维护两份实现
 
 ---
 
@@ -83,7 +84,7 @@ flowchart TD
 | 语言 / UI | Kotlin + Jetpack Compose（Material 3，明暗主题） |
 | 架构 | 单前台服务管线 + StateFlow 状态共享 + 协程 |
 | OCR | ML Kit Text Recognition Japanese（离线，含竖排支持） |
-| 离线翻译 | ML Kit On-device Translate（模型内置 assets） |
+| 离线翻译 | ML Kit On-device Translate（`foss` 走官方下载通道，不内置模型） |
 | 在线翻译 | OpenAI 兼容端点（DeepSeek / 通义 / Kimi / Ollama 均可）、DeepL API、Google Cloud Translation v2，共享 OkHttp 客户端 |
 | 截屏 | MediaProjection + VirtualDisplay + ImageReader，Android 14 旋转适配 |
 | 构建 | AGP + Gradle 8.9（Kotlin DSL），R8 压缩 + v2 签名 |
@@ -97,9 +98,24 @@ flowchart TD
 ├── gradle.properties
 ├── gradle/wrapper/gradle-wrapper.properties
 └── app/
-    ├── build.gradle.kts        SDK 版本、签名、R8、依赖清单
+    ├── build.gradle.kts        SDK 版本、签名、R8、依赖清单、变体定义
     └── proguard-rules.pro      ML Kit / OkHttp / Compose 混淆补充规则
 ```
+
+---
+
+## 两个构建变体：`foss` 与 `full`
+
+按 `distribution` 维度拆分。**对外发布只发 `foss`。**
+
+| 变体 | 包名 | 内置离线模型 | 体积（arm64） | 用途 |
+|---|---|---|---|---|
+| `foss` | `com.mangatranslate` | 否 | 31 MB | 对外分发，首启走官方通道取模型 |
+| `full` | `com.mangatranslate.full` | 是 | 111 MB | 自用，离线即用 |
+
+**为什么必须拆**：ML Kit 的离线翻译模型属 Google 专有条款下的 "related software"，未授予再分发权利，因此对外分发的包不能内置。这条约束落在构建配置里而非发布流程里——变体差异仅用 `buildConfigField`（`BUNDLED_MODELS` / `PRO_ENABLED`）表达，管线代码不分叉；两个变体用不同 `applicationId`，避免装错版本互相静默替换。
+
+发布前用 `tools/preflight.sh` 门禁断言三件事：包内无 `assets/models/`、体积低于 60MB 上限、捐赠链接已配置（占位值会直接发给用户）。脚本对**刚构建出的产物**运行，因此检查的是源码常量而非 dex 内字符串——占位值特征太弱，在 dex 里检索不可靠。
 
 ---
 
@@ -109,10 +125,12 @@ flowchart TD
 
 | 文件 | 大小 | 适用 |
 |---|---|---|
-| `MangaScreenTranslator-arm64-release.apk` | ~111 MB | **推荐**。近五年所有真机（骁龙/天玑/麒麟均为 arm64） |
-| `MangaScreenTranslator-universal-release.apk` | ~184 MB | 模拟器 / 老 32 位机 / 不确定架构 |
+| `MangaScreenTranslator-v1.5.0-foss-arm64-v8a.apk` | 31 MB | **推荐**。近五年所有真机（骁龙/天玑/麒麟均为 arm64） |
+| `MangaScreenTranslator-v1.5.0-foss-universal.apk` | 107 MB | 模拟器 / 老 32 位机 / 不确定架构 |
 
-体积中约 80MB 是预置的离线翻译模型 —— 这是「装上即可离线用」的代价。
+这两个包是**对外分发的 `foss` 变体**：不含内置翻译模型，因此体积比自用版小约 80MB。
+首次使用 ML Kit 引擎时会经官方通道下载模型（约 90MB），下载一次之后即完全离线可用；
+也可以直接在设置里改用大模型 / DeepL 引擎，跳过这一步。
 
 ### 使用流程
 
